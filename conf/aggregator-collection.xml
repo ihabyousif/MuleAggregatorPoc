@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:stdio="http://www.mulesoft.org/schema/mule/stdio" xmlns:tcp="http://www.mulesoft.org/schema/mule/tcp"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:test="http://www.mulesoft.org/schema/mule/test"
+	xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/3.1/mule.xsd
+          http://www.mulesoft.org/schema/mule/stdio http://www.mulesoft.org/schema/mule/stdio/3.1/mule-stdio.xsd
+          http://www.mulesoft.org/schema/mule/tcp http://www.mulesoft.org/schema/mule/tcp/3.1/mule-tcp.xsd
+          http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/3.1/mule-vm.xsd
+          http://www.mulesoft.org/schema/mule/test http://www.mulesoft.org/schema/mule/test/3.1/mule-test.xsd">
+
+	<byte-array-to-string-transformer
+		name="ByteArrayToString" />
+	<string-to-byte-array-transformer
+		name="StringToByteArray" />
+	<model>
+	<!-- Simulate sending the equivalent message to the input character input {'a' or 'b' or 'c' or 'd'} and 
+	the component will send the equivalent message to input char -->
+		<service name="testSending">
+			<inbound>
+				<stdio:inbound-endpoint system="IN" />
+			</inbound>
+			<component class="com.poc.MessagePartSender" />
+			<outbound>
+				<pass-through-router>
+				    <!-- send to the main socket server on port 1029-->
+					<tcp:outbound-endpoint host="127.0.0.1" port="1029" />
+				</pass-through-router>
+			</outbound>
+		</service>
+
+
+		<service name="receiverSocket">
+			<inbound>
+			    <!-- receive all the messages sent to 1029 and transform it to string-->
+				<tcp:inbound-endpoint host="127.0.0.1" port="1029" transformer-refs="ByteArrayToString">
+				</tcp:inbound-endpoint>
+			</inbound>
+			<!-- parse the received text and inject the mule message with the required aggregator parameters-->
+			<component class="com.poc.InjectPropertiesComponent" />
+			<outbound>
+				<pass-through-router>
+				    <!-- forward the message to the aggregator service-->
+					<vm:outbound-endpoint path="toAggregator" />
+				</pass-through-router>
+			</outbound>
+		</service>
+
+
+		<service name="messageAggregator">
+			<inbound>
+				<vm:inbound-endpoint path="toAggregator" />
+				<!-- aggregate the parts together into collection type-->
+				<collection-aggregator-router timeout="1000000" failOnTimeout="false" />
+			</inbound>
+			<!-- check the output message after aggregation-->
+			<component class="com.poc.collection.AfterAggregatorComponent" />
+			<outbound>
+				<pass-through-router>
+				    <!-- send again to another TCP server-->
+					<tcp:outbound-endpoint host="127.0.0.1" port="1030" />
+				</pass-through-router>
+			</outbound>
+		</service>
+
+		<service name="testReceiving">
+			<inbound>
+			    <!-- receive all the messages sent to 1030 and transform it to string-->
+				<tcp:inbound-endpoint host="127.0.0.1" port="1030" transformer-refs="ByteArrayToString" />
+			</inbound>
+			<!-- log the final message to check the final result-->
+			<echo-component></echo-component>
+		</service>
+	</model>
+</mule>
